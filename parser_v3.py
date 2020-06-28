@@ -191,7 +191,7 @@ class Client:
                     WIDTH=0,
                     HEIGHT=0,
                     WEIGHT=0,
-                    META_TITLE=None,
+                    META_TITLE=f'{model_name} {good_color}, купить в Москве',
                     META_KEYWORDS=f'{model_name if model_name else ""} {good_art if good_art else ""} '
                                   f'{good_manufacturer if good_manufacturer else ""}',
                     META_DESCRIPTION=None,

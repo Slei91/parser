@@ -46,6 +46,7 @@ HEADERS = (
     '_ATTRIBUTES_',
     '_IMAGES_',
     '_PRODUCT_IMAGES_',
+    '_RELATED_NAME_',
     '_STORE_ID_',
     '_URL_'
 )
@@ -92,6 +93,7 @@ ParseResult = namedtuple(
         'ATTRIBUTES',
         'IMAGES',
         'PRODUCT_IMAGES',
+        'RELATED_NAME',
         'STORE_ID',
         'URL'
     )
@@ -138,6 +140,12 @@ class Client:
             model_name = soup.select('div.product-name > h1')[0].get_text()
         except:
             model_name = None
+
+        # Сопутствующие товары
+        related_products_list = []
+        related_products = soup.select('form > div.item-info > div.product-name > a')
+        for item_name in related_products:
+            related_products_list.append(item_name.get_text())
 
         # Словарь характеристик
 
@@ -210,6 +218,7 @@ class Client:
                     ATTRIBUTES='\n'.join([f'Характеристики|{key}|{value}' for key, value in attributes.items()]),
                     IMAGES=None,
                     PRODUCT_IMAGES=None,
+                    RELATED_NAME=','.join(related_products_list),
                     STORE_ID=0,
                     URL=None
                 ))
@@ -223,8 +232,8 @@ class Client:
                 continue
 
     def save_csv(self):
-        with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
-        # with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
+        # with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
+        with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
             writer = csv.writer(file, delimiter=';')
             writer.writerow(HEADERS)
             for item in self.result:

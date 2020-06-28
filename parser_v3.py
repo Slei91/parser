@@ -232,8 +232,8 @@ class Client:
                 continue
 
     def save_csv(self):
-        # with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
-        with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
+        with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
+        # with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
             writer = csv.writer(file, delimiter=';')
             writer.writerow(HEADERS)
             for item in self.result:

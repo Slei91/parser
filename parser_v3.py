@@ -2,10 +2,13 @@ import requests
 import os
 import csv
 import tkinter
+import time
+import threading
+import logging
 from tkinter import messagebox as mb
 from bs4 import BeautifulSoup
 from collections import namedtuple
-test
+
 
 HEADERS = (
     '_ID_',
@@ -102,6 +105,8 @@ ParseResult = namedtuple(
 
 
 class Client:
+    result = []
+
     def __init__(self, page_url):
         self.page_url = page_url
         self.session = requests.Session()
@@ -111,7 +116,7 @@ class Client:
             'Accept_Language': 'ru-RU',
         }
         self.host_img_dir_path = 'consolari.beget.tech/public_html/image/catalog/rucki-pic'
-        self.result = []
+        # self.result = []
         self.dir_name = None
 
     def load_catalog_page(self):
@@ -132,8 +137,58 @@ class Client:
             return 1
         return last_page
 
-    def get_good_content(self, url, good_manufacturer):
-        good_page = self.load_page(url)
+    def save_csv(self):
+        # with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
+        with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
+            writer = csv.writer(file, delimiter=';')
+            writer.writerow(HEADERS)
+            for item in self.result:
+                try:
+                    writer.writerow(item)
+                except:
+                    continue
+
+    def parse_url(self):
+        page = self.load_catalog_page()
+        soup = BeautifulSoup(page.text, 'lxml')
+        last_page = self.get_last_page_num(soup)
+
+        # Получаю поле производителя
+        try:
+            good_manufacturer = soup.select_one('ul.breadcrumbs > :nth-child(4)').get_text()
+        except:
+            good_manufacturer = None
+
+        # Создаю имя папки для картинок
+        self.dir_name = soup.select_one('ul.breadcrumbs > :last-child').get_text()      # отвечает за название файла
+
+        for page_num in range(1, last_page + 1):
+            goods_page_link = self.load_page(url=self.page_url, params={'page': page_num})
+            soup = BeautifulSoup(goods_page_link.text, 'lxml')
+            goods_page_links = soup.find_all('a', class_='product-image')
+            goods_links_gen = (link['href'] for link in goods_page_links)
+
+            result_data_list = [ParseUrl(url=good_page, good_manufacturer=good_manufacturer)
+                                for good_page in goods_links_gen]
+
+            for item in result_data_list:
+                item.start()
+
+            for item in result_data_list:
+                item.join()
+
+
+class ParseUrl(Client, threading.Thread):
+    def __init__(self, good_manufacturer, url, *args, **kwargs):
+        Client.__init__(self, page_url=url)
+        threading.Thread.__init__(self, *args, **kwargs)
+        self.url = url
+        self.good_manufacturer = good_manufacturer
+        # self.result = []
+
+    def run(self):
+        logging.info(f'Поток {self.name} начал выполняться')
+        good_page = self.load_page(self.url)
         soup = BeautifulSoup(good_page.text, 'lxml')
 
         # Название модели
@@ -157,11 +212,6 @@ class Client:
             key = tr.find('span', class_='value').get_text()
             attributes[key] = tr.find('td', class_='data').get_text()
 
-        # # Ссылки на картинки                                                              Картинки!!!!!!!
-        # good_img_path = soup.find('img', alt=model_name).get('data-src')
-        # # Имя картинки
-        # good_img_name = self.host_img_dir_path + '/' + good_img_path.split('/')[-1]
-
         options = soup.select('select.selectBox > option')
         for option in options:
             # Название цвета
@@ -170,13 +220,13 @@ class Client:
                 # id по value
                 good_value_id = option.get('value')
                 # Артикул(модель)
-                good_art = soup.find('div', {'class': 'goodsDataMainModificationsList', 'rel': good_value_id})\
+                good_art = soup.find('div', {'class': 'goodsDataMainModificationsList', 'rel': good_value_id}) \
                     .find_next('input', {'name': 'art_number'}).get('value')
                 # Цена
-                good_price = soup.find('div', {'class': 'goodsDataMainModificationsList', 'rel': good_value_id})\
+                good_price = soup.find('div', {'class': 'goodsDataMainModificationsList', 'rel': good_value_id}) \
                     .find_next('input', {'name': 'price_now'}).get('value')
 
-                self.result.append(ParseResult(
+                Client.result.append(ParseResult(
                     id=None,
                     category=None,
                     name=f'{model_name} {good_color}',
@@ -187,7 +237,7 @@ class Client:
                     isbn=None,
                     mpn=None,
                     upc=None,
-                    manufacturer=good_manufacturer,
+                    manufacturer=self.good_manufacturer,
                     SHIPPING=1,
                     LOCATION=None,
                     PRICE=good_price,
@@ -202,11 +252,11 @@ class Client:
                     WEIGHT=0,
                     META_TITLE=f'{model_name} {good_color}, купить в Москве',
                     META_KEYWORDS=f'{model_name if model_name else ""} {good_art if good_art else ""} '
-                                  f'{good_manufacturer if good_manufacturer else ""}',
+                                  f'{self.good_manufacturer if self.good_manufacturer else ""}',
                     META_DESCRIPTION=None,
                     DESCRIPTION=f'{model_name} от итальянского производителя '
-                                f'{good_manufacturer if good_manufacturer else ""}.',
-                    PRODUCT_TAG=f'{model_name}, {good_manufacturer if good_manufacturer else ""}',
+                                f'{self.good_manufacturer if self.good_manufacturer else ""}.',
+                    PRODUCT_TAG=f'{model_name}, {self.good_manufacturer if self.good_manufacturer else ""}',
                     IMAGE=None,
                     SORT_ORDER=0,
                     STATUS=1,
@@ -215,7 +265,7 @@ class Client:
                     SPECIAL=None,
                     OPTIONS=None,
                     FILTERS=f'Стиль|{attributes["Стиль"] if "Стиль" in attributes else ""}\n'
-                            f'Цвет|{good_color}\nБренд|{good_manufacturer if good_manufacturer else ""}',
+                            f'Цвет|{good_color}\nБренд|{self.good_manufacturer if self.good_manufacturer else ""}',
                     ATTRIBUTES='\n'.join([f'Характеристики|{key}|{value}' for key, value in attributes.items()]),
                     IMAGES=None,
                     PRODUCT_IMAGES=None,
@@ -224,63 +274,24 @@ class Client:
                     URL=None
                 ))
 
-                # r = requests.get(good_img_path)                                         Скачивание картинок
-                # if r.status_code == 200:
-                #     with open(os.path.join(self.dir_name, model_name), 'wb') as img:
-                #         img.write(r.content)
             except:
                 # print('Ошибка в структуре карточки, пропускаю!')
                 continue
-
-    def save_csv(self):
-        with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
-        # with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
-            writer = csv.writer(file, delimiter=';')
-            writer.writerow(HEADERS)
-            for item in self.result:
-                try:
-                    writer.writerow(item)
-                except:
-                    continue
-
-    def parse_url(self):
-        page = self.load_catalog_page()
-        soup = BeautifulSoup(page.text, 'lxml')
-        last_page = self.get_last_page_num(soup)
-
-        # Получаю поле производителя
-        try:
-            good_manufacturer = soup.select_one('ul.breadcrumbs > :nth-child(4)').get_text()
-        except:
-            good_manufacturer = None
-
-        # # Создаю имя папки для картинок                                                       Папка для картинок!!!!
-        self.dir_name = soup.select_one('ul.breadcrumbs > :last-child').get_text()      # отвечает за название файла
-        # # Создаю папку для картинок
-        # try:
-        #     os.mkdir(self.dir_name)
-        # except FileExistsError:
-        #     print('Папка уже существует')
-
-        for page_num in range(1, last_page + 1):
-            goods_page_link = self.load_page(url=self.page_url, params={'page': page_num})
-            soup = BeautifulSoup(goods_page_link.text, 'lxml')
-            goods_page_links = soup.find_all('a', class_='product-image')
-            goods_links_gen = (link['href'] for link in goods_page_links)
-
-            for good_page in goods_links_gen:
-                self.get_good_content(url=good_page, good_manufacturer=good_manufacturer)
+        logging.info(f'Поток {self.name} закончил выполняться')
 
 
-def click_button():
-    url = user_input.get()
-    parsing = Client(page_url=url)
-    parsing.parse_url()
-    parsing.save_csv()
-    mb.showinfo('Готово', f'Парсер завершил работу, путь к файлам: {os.getcwd()}')
+def main():
+    logging.basicConfig(level=logging.INFO)
 
+    def click_button():
+        url = user_input.get()
+        start_parse = time.time()
+        parsing = Client(page_url=url)
+        parsing.parse_url()
+        parsing.save_csv()
+        print(f'Парсер отработал за {time.time() - start_parse} секунд')
+        mb.showinfo('Готово', f'Парсер завершил работу, путь к файлам: {os.getcwd()}')
 
-if __name__ == '__main__':
     window = tkinter.Tk()
     window.title('Парсер')
     lbl = tkinter.Label(window, text='Введите ссылку')
@@ -291,3 +302,7 @@ if __name__ == '__main__':
     btn.grid(column=0, row=2, pady=10)
 
     window.mainloop()
+
+
+if __name__ == '__main__':
+    main()

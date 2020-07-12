@@ -3,11 +3,10 @@ import os
 import csv
 import tkinter
 import time
-import threading
+import multiprocessing
 import logging
 from tkinter import messagebox as mb
 from bs4 import BeautifulSoup
-from collections import namedtuple
 
 
 HEADERS = (
@@ -55,54 +54,6 @@ HEADERS = (
     '_URL_'
 )
 
-ParseResult = namedtuple(
-    'ParseResult',
-    (
-        'id',
-        'category',
-        'name',
-        'model',
-        'sku',
-        'ean',
-        'jan',
-        'isbn',
-        'mpn',
-        'upc',
-        'manufacturer',
-        'SHIPPING',
-        'LOCATION',
-        'PRICE',
-        'POINTS',
-        'REWARD_POINTS',
-        'QUANTITY',
-        'STOCK_STATUS_ID',
-        'STOCK_STATUS',
-        'LENGTH',
-        'WIDTH',
-        'HEIGHT',
-        'WEIGHT',
-        'META_TITLE',
-        'META_KEYWORDS',
-        'META_DESCRIPTION',
-        'DESCRIPTION',
-        'PRODUCT_TAG',
-        'IMAGE',
-        'SORT_ORDER',
-        'STATUS',
-        'SEO_KEYWORD',
-        'DISCOUNT',
-        'SPECIAL',
-        'OPTIONS',
-        'FILTERS',
-        'ATTRIBUTES',
-        'IMAGES',
-        'PRODUCT_IMAGES',
-        'RELATED_NAME',
-        'STORE_ID',
-        'URL'
-    )
-)
-
 
 class Client:
     result = []
@@ -116,7 +67,6 @@ class Client:
             'Accept_Language': 'ru-RU',
         }
         self.host_img_dir_path = 'consolari.beget.tech/public_html/image/catalog/rucki-pic'
-        # self.result = []
         self.dir_name = None
 
     def load_catalog_page(self):
@@ -138,8 +88,8 @@ class Client:
         return last_page
 
     def save_csv(self):
-        # with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
-        with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
+        with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
+        # with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
             writer = csv.writer(file, delimiter=';')
             writer.writerow(HEADERS)
             for item in self.result:
@@ -162,32 +112,46 @@ class Client:
         # Создаю имя папки для картинок
         self.dir_name = soup.select_one('ul.breadcrumbs > :last-child').get_text()      # отвечает за название файла
 
+        goods_links_gen = None
         for page_num in range(1, last_page + 1):
             goods_page_link = self.load_page(url=self.page_url, params={'page': page_num})
             soup = BeautifulSoup(goods_page_link.text, 'lxml')
             goods_page_links = soup.find_all('a', class_='product-image')
             goods_links_gen = (link['href'] for link in goods_page_links)
 
-            result_data_list = [ParseUrl(url=good_page, good_manufacturer=good_manufacturer)
-                                for good_page in goods_links_gen]
+        collector = multiprocessing.Queue(maxsize=-1)
+        result_data_list = [ParseUrl(url=good_page, good_manufacturer=good_manufacturer, collector=collector)
+                            for good_page in goods_links_gen]
 
-            for item in result_data_list:
-                item.start()
+        for item in result_data_list:
+            item.start()
 
-            for item in result_data_list:
-                item.join()
+        ''' Пока есть живые потоки, пока есть данные в очереди программа собирает данные,
+            если процессы закончились и в очереди нет данных, то происходит выход из цикла.
+            Если собирать данные после join процессов, то получается deadlock,
+            из-за того, что в очередь получает lock из-за нехватки места, а join процессов ждет очередь
+        '''
+        while True:
+            running = any(p.is_alive() for p in result_data_list)
+            while not collector.empty():
+                self.result.append(collector.get().values())
+            if not running:
+                break
+
+        for item in result_data_list:
+            item.join()
 
 
-class ParseUrl(Client, threading.Thread):
-    def __init__(self, good_manufacturer, url, *args, **kwargs):
+class ParseUrl(Client, multiprocessing.Process):
+    def __init__(self, good_manufacturer, url, collector, *args, **kwargs):
         Client.__init__(self, page_url=url)
-        threading.Thread.__init__(self, *args, **kwargs)
+        multiprocessing.Process.__init__(self, *args, **kwargs)
         self.url = url
         self.good_manufacturer = good_manufacturer
-        # self.result = []
+        self.collector = collector
 
     def run(self):
-        logging.info(f'Поток {self.name} начал выполняться')
+        logging.info(f'Процесс {self.name} начал выполняться')
         good_page = self.load_page(self.url)
         soup = BeautifulSoup(good_page.text, 'lxml')
 
@@ -226,7 +190,7 @@ class ParseUrl(Client, threading.Thread):
                 good_price = soup.find('div', {'class': 'goodsDataMainModificationsList', 'rel': good_value_id}) \
                     .find_next('input', {'name': 'price_now'}).get('value')
 
-                Client.result.append(ParseResult(
+                self.collector.put(dict(
                     id=None,
                     category=None,
                     name=f'{model_name} {good_color}',
@@ -275,9 +239,8 @@ class ParseUrl(Client, threading.Thread):
                 ))
 
             except:
-                # print('Ошибка в структуре карточки, пропускаю!')
                 continue
-        logging.info(f'Поток {self.name} закончил выполняться')
+        logging.info(f'Процесс {self.name} закончил выполняться')
 
 
 def main():

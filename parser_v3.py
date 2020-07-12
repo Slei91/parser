@@ -268,4 +268,8 @@ def main():
 
 
 if __name__ == '__main__':
+    # нижепреведенная конструкция нужна для корректной работы исполняемого(скомпилированного) файла на windows
+    if os.sys.argv[0][-4:] == '.exe':
+        setattr(os.sys, 'frozen', True)
+    multiprocessing.freeze_support()
     main()

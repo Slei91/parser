@@ -88,15 +88,15 @@ class Client:
         return last_page
 
     def save_csv(self):
-        with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
         # with open(f'{self.dir_name}.csv', 'w', encoding='cp1251', newline='') as file:
+        with open(f'{self.dir_name}.csv', 'w', encoding='utf8', newline='') as file:
             writer = csv.writer(file, delimiter=';')
             writer.writerow(HEADERS)
             for item in self.result:
                 try:
                     writer.writerow(item)
-                except:
-                    continue
+                except Exception as err:
+                    print(err)
 
     def parse_url(self):
         page = self.load_catalog_page()
@@ -106,7 +106,8 @@ class Client:
         # Получаю поле производителя
         try:
             good_manufacturer = soup.select_one('ul.breadcrumbs > :nth-child(4)').get_text()
-        except:
+        except Exception as err:
+            print(err)
             good_manufacturer = None
 
         # Создаю имя папки для картинок
@@ -158,7 +159,8 @@ class ParseUrl(Client, multiprocessing.Process):
         # Название модели
         try:
             model_name = soup.select('div.product-name > h1')[0].get_text()
-        except:
+        except Exception as err:
+            print(err)
             model_name = None
 
         # Сопутствующие товары
@@ -238,7 +240,8 @@ class ParseUrl(Client, multiprocessing.Process):
                     URL=None
                 ))
 
-            except:
+            except Exception as err:
+                print(err)
                 continue
         logging.info(f'Процесс {self.name} закончил выполняться')
 
